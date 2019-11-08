@@ -1,2 +1,2 @@
-from .backbone_net import *
+from .backbone import *
 from .module import *

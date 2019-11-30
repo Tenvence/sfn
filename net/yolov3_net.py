@@ -54,3 +54,19 @@ class Yolov3Net(nn.Module):
         sobj_branch_output = self.conv_sobj_output(sobj_branch_output)
 
         return lobj_branch_output, mobj_branch_output, sobj_branch_output
+
+    def initialize_weight(self):
+        idx = 0
+        for m in self.modules():
+            idx += 1
+        print(idx)
+
+
+class A:
+    def a(self):
+        pass
+
+
+class B(A):
+    def b(self):
+        pass

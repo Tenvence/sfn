@@ -74,10 +74,10 @@ class GravelDataset(data.Dataset):
         m_tensor = np.zeros((m_output_size, m_output_size, self.anchor_per_scale, 5 + self.class_num))
         l_tensor = np.zeros((l_output_size, l_output_size, self.anchor_per_scale, 5 + self.class_num))
 
-        # 保存不同尺度下的生成有效 tensor 中向量的 bbox 尺寸
-        s_coords = []
-        m_coords = []
-        l_coords = []
+        # 保存不同尺度下的生成有效 tensor 中向量的 bbox 尺寸，保持相同的大小是为了多个矩阵成功组成一个 batch，0 为计数器
+        s_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
+        m_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
+        l_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
 
         # 将 ground truth 的信息映射到与网络输出尺寸相同的张量上
         for bbox in bbox_info_array:
@@ -114,4 +114,8 @@ class GravelDataset(data.Dataset):
                 else:
                     l_tensor, l_coords = utils.compute_valid_vectors_of_one_bbox(l_coord, coord, best_anchor, cla_conf, l_tensor, l_coords)
 
-        return s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+        s_coords = np.array(s_coords[0])
+        m_coords = np.array(m_coords[0])
+        l_coords = np.array(l_coords[0])
+
+        return s_tensor, m_tensor, l_tensor, np.array(s_coords), np.array(m_coords), np.array(l_coords)

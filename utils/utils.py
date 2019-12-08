@@ -89,6 +89,7 @@ def compute_valid_vectors_of_one_bbox(scale_coord, bbox_coord, iou_mask, cla_con
     tensor[y_idx, x_idx, iou_mask, 4:5] = 1.0  # 置信度
     tensor[y_idx, x_idx, iou_mask, 5:] = cla_conf  # 分类分布
 
-    coords.append(bbox_coord)
+    coords[0][coords[1], :] = bbox_coord
+    coords[1] += 1
 
     return tensor, coords

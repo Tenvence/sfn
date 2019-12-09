@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 import utils.config as cfg
@@ -18,8 +19,8 @@ class GravelDataset(data.Dataset):
         self.detection_scale = np.array(cfg.DETECTION_SCALE)
         self.output_size = self.input_image_size // self.detection_scale
 
-        self.max_bbox_per_scale = 150
-        self.anchor_per_scale = 3
+        self.max_bbox_per_scale = cfg.MAX_BBOX_PER_SCALE
+        self.anchor_per_scale = cfg.ANCHOR_PER_SCALE
 
         self.data_aug = is_train
 
@@ -59,14 +60,14 @@ class GravelDataset(data.Dataset):
         bbox_info_array[:, [0, 2]] = bbox_info_array[:, [0, 2]] * scale + pad_x
         bbox_info_array[:, [1, 3]] = bbox_info_array[:, [1, 3]] * scale + pad_y
 
-        s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_true_bboxes_to_output_tensor(bbox_info_array)
+        s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_true_bboxes_to_tensor(bbox_info_array)
 
         return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
 
     def __len__(self):
         return len(self.dataset_list)
 
-    def encode_true_bboxes_to_output_tensor(self, bbox_info_array):
+    def encode_true_bboxes_to_tensor(self, bbox_info_array):
         s_output_size, m_output_size, l_output_size = self.output_size  # 小、中、大尺度检测
 
         # 网络中各个尺度的输出张量尺寸
@@ -107,6 +108,7 @@ class GravelDataset(data.Dataset):
                 best_anchor_idx = np.argmax(iou_list, axis=-1)
                 best_scale = int(best_anchor_idx / self.anchor_per_scale)
                 best_anchor = int(best_anchor_idx % self.anchor_per_scale)
+
                 if best_scale == 0:
                     s_tensor, s_coords = utils.compute_valid_vectors_of_one_bbox(s_coord, coord, best_anchor, cla_conf, s_tensor, s_coords)
                 elif best_scale == 1:
@@ -114,8 +116,12 @@ class GravelDataset(data.Dataset):
                 else:
                     l_tensor, l_coords = utils.compute_valid_vectors_of_one_bbox(l_coord, coord, best_anchor, cla_conf, l_tensor, l_coords)
 
-        s_coords = np.array(s_coords[0])
-        m_coords = np.array(m_coords[0])
-        l_coords = np.array(l_coords[0])
+        s_tensor = torch.tensor(s_tensor, dtype=torch.float32)
+        m_tensor = torch.tensor(m_tensor, dtype=torch.float32)
+        l_tensor = torch.tensor(l_tensor, dtype=torch.float32)
 
-        return s_tensor, m_tensor, l_tensor, np.array(s_coords), np.array(m_coords), np.array(l_coords)
+        s_coords = torch.tensor(np.array(s_coords[0]), dtype=torch.float32)
+        m_coords = torch.tensor(np.array(m_coords[0]), dtype=torch.float32)
+        l_coords = torch.tensor(np.array(l_coords[0]), dtype=torch.float32)
+
+        return s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords

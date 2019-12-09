@@ -17,10 +17,10 @@ class Darknet53(nn.Module):
         x = self.res_block_1(x)
         x = self.res_block_2(x)
         x = self.res_block_8_1(x)
-        route_1 = x
+        route_s = x
         x = self.res_block_8_2(x)
-        route_2 = x
+        route_m = x
         x = self.res_block_4(x)
-        route_3 = x
+        route_l = x
 
-        return route_1, route_2, route_3
+        return route_s, route_m, route_l

@@ -13,8 +13,8 @@ print('r1:', r1.shape)
 print('r2:', r2.shape)
 print('r3:', r3.shape)
 
-lobj_out, mobj_out, sobj_out = yolov3_net(x)
+s_out, m_out, l_out = yolov3_net(x)
 
-print('lobj:', lobj_out.shape)
-print('mobj:', mobj_out.shape)
-print('sobj:', sobj_out.shape)
+print('s:', s_out.shape)
+print('m:', m_out.shape)
+print('l:', l_out.shape)

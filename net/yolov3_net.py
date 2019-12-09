@@ -13,44 +13,44 @@ class Yolov3Net(nn.Module):
         self.backbone = backbone.Darknet53()
         self.up_sample = nn.UpsamplingNearest2d(scale_factor=2)
 
-        self.conv_set_lobj = module.ConvolutionSetModule(in_channels=1024, out_channels=512)
-        self.conv_lobj = module.ConvolutionModule(in_channels=512, out_channels=1024, kernel_size=3, stride=1, padding=1)
-        self.conv_lobj_output = nn.Conv2d(in_channels=1024, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
-        self.conv_lobj_branch = module.ConvolutionModule(in_channels=512, out_channels=256, kernel_size=1, stride=1, padding=0)
+        self.conv_set_l = module.ConvolutionSetModule(in_channels=1024, out_channels=512)
+        self.conv_l = module.ConvolutionModule(in_channels=512, out_channels=1024, kernel_size=3, stride=1, padding=1)
+        self.conv_l_output = nn.Conv2d(in_channels=1024, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
+        self.conv_l_branch = module.ConvolutionModule(in_channels=512, out_channels=256, kernel_size=1, stride=1, padding=0)
 
-        self.conv_set_mobj = module.ConvolutionSetModule(in_channels=768, out_channels=256)
-        self.conv_mobj = module.ConvolutionModule(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1)
-        self.conv_mobj_output = nn.Conv2d(in_channels=512, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
-        self.conv_mobj_branch = module.ConvolutionModule(in_channels=256, out_channels=128, kernel_size=1, stride=1, padding=0)
+        self.conv_set_m = module.ConvolutionSetModule(in_channels=768, out_channels=256)
+        self.conv_m = module.ConvolutionModule(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1)
+        self.conv_m_output = nn.Conv2d(in_channels=512, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
+        self.conv_m_branch = module.ConvolutionModule(in_channels=256, out_channels=128, kernel_size=1, stride=1, padding=0)
 
-        self.conv_set_sobj = module.ConvolutionSetModule(in_channels=384, out_channels=128)
-        self.conv_sobj = module.ConvolutionModule(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=0)
-        self.conv_sobj_output = nn.Conv2d(in_channels=256, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
+        self.conv_set_s = module.ConvolutionSetModule(in_channels=384, out_channels=128)
+        self.conv_s = module.ConvolutionModule(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1)
+        self.conv_s_output = nn.Conv2d(in_channels=256, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
-        route_1, route_2, route_3 = self.backbone(x)
+        route_s, route_m, route_l = self.backbone(x)
 
-        route_3 = self.conv_set_lobj(route_3)
+        route_l = self.conv_set_l(route_l)
 
-        lobj_branch_output = self.conv_lobj(route_3)
-        lobj_branch_output = self.conv_lobj_output(lobj_branch_output)
+        l_branch_output = self.conv_l(route_l)
+        l_branch_output = self.conv_l_output(l_branch_output)
 
-        route_3 = self.conv_lobj_branch(route_3)
-        route_3 = self.up_sample(route_3)
+        route_l = self.conv_l_branch(route_l)
+        route_l = self.up_sample(route_l)
 
-        route_2 = torch.cat((route_3, route_2), dim=1)
-        route_2 = self.conv_set_mobj(route_2)
+        route_m = torch.cat((route_l, route_m), dim=1)
+        route_m = self.conv_set_m(route_m)
 
-        mobj_branch_output = self.conv_mobj(route_2)
-        mobj_branch_output = self.conv_mobj_output(mobj_branch_output)
+        m_branch_output = self.conv_m(route_m)
+        m_branch_output = self.conv_m_output(m_branch_output)
 
-        route_2 = self.conv_mobj_branch(route_2)
-        route_2 = self.up_sample(route_2)
+        route_m = self.conv_m_branch(route_m)
+        route_m = self.up_sample(route_m)
 
-        route_1 = torch.cat((route_2, route_1), dim=1)
-        route_1 = self.conv_set_sobj(route_1)
+        route_s = torch.cat((route_m, route_s), dim=1)
+        route_s = self.conv_set_s(route_s)
 
-        sobj_branch_output = self.conv_sobj(route_1)
-        sobj_branch_output = self.conv_sobj_output(sobj_branch_output)
+        s_branch_output = self.conv_s(route_s)
+        s_branch_output = self.conv_s_output(s_branch_output)
 
-        return lobj_branch_output, mobj_branch_output, sobj_branch_output
+        return s_branch_output, m_branch_output, l_branch_output

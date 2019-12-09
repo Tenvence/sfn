@@ -27,6 +27,14 @@ class Yolov3Net(nn.Module):
         self.conv_s = module.ConvolutionModule(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1)
         self.conv_s_output = nn.Conv2d(in_channels=256, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
 
+        nn.init.constant_(self.conv_l_output.bias, 0.)
+        nn.init.constant_(self.conv_m_output.bias, 0.)
+        nn.init.constant_(self.conv_s_output.bias, 0.)
+
+        nn.init.normal_(self.conv_l_output.weight, std=0.01)
+        nn.init.normal_(self.conv_m_output.weight, std=0.01)
+        nn.init.normal_(self.conv_s_output.weight, std=0.01)
+
     def forward(self, x):
         route_s, route_m, route_l = self.backbone(x)
 

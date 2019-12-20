@@ -1,8 +1,8 @@
 .idea
 .vscode
 *.pyc
-/net/__pycache__
+/model/__pycache__
 /utils/__pycache__
 docs
 GravelDataset
-model
+output

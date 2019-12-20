@@ -1,51 +1,74 @@
 import os
-import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
-import utils.config as cfg
-import utils.utils as utils
-from utils.read_file_utils import get_dataset_list, get_class_list, get_anchors, parse_annotation_file
+import xml.etree.cElementTree as Et
 from PIL import Image
+from utils.utils import compute_iou
 
 
 class GravelDataset(data.Dataset):
-    def __init__(self, is_train=False):
-        self.crossed_image_path = cfg.CROSSED_IMAGE_PATH
-        self.single_image_path = cfg.SINGLE_IMAGE_PATH
-        self.annotations_path = cfg.ANNOTATIONS_PATH
+    def __init__(self, anchors, crossed_image_dir_path, single_image_dir_path, annotation_dir_path, data_list, model_input_size, model_s_scale,
+                 model_m_scale, model_l_scale, iou_thresh):
+        self.crossed_image_dir_path = crossed_image_dir_path
+        self.single_image_dir_path = single_image_dir_path
+        self.annotations_dir_path = annotation_dir_path
 
-        self.input_image_size = cfg.INPUT_IMAGE_SIZE
-        self.detection_scale = np.array(cfg.DETECTION_SCALE)
-        self.output_size = self.input_image_size // self.detection_scale
+        self.input_size = model_input_size
+        self.s_scale = model_s_scale
+        self.m_scale = model_m_scale
+        self.l_scale = model_l_scale
+        self.s_output_size = self.input_size // self.s_scale
+        self.m_output_size = self.input_size // self.m_scale
+        self.l_output_size = self.input_size // self.l_scale
 
-        self.max_bbox_per_scale = cfg.MAX_BBOX_PER_SCALE
-        self.anchor_per_scale = cfg.ANCHOR_PER_SCALE
+        self.dataset_list = data_list
 
-        self.data_aug = is_train
+        self.s_anchors, self.m_anchors, self.l_anchors = anchors
 
-        self.dataset_list = get_dataset_list(cfg.TRAIN_LIST_PATH if is_train else cfg.TEST_LIST_PATH)
-        self.class_list = get_class_list(cfg.CLASSES_FILE_PATH)
-        self.anchors = get_anchors(cfg.ANCHOR_FILE_PATH)
-
-        self.class_num = 1 if cfg.IS_ONE_CLASSIFICATION else len(self.class_list)
+        self.iou_thresh = iou_thresh
 
     def __getitem__(self, index):
         dataset_name = self.dataset_list[index]
+        crossed_image_path = os.path.join(self.crossed_image_dir_path, dataset_name + '.jpg')
+        single_image_path = os.path.join(self.single_image_dir_path, dataset_name + '.jpg')
+        annotation_path = os.path.join(self.annotations_dir_path, dataset_name + '.xml')
 
-        crossed_image = Image.open(os.path.join(self.crossed_image_path, dataset_name + '.jpg'))
-        single_image = Image.open(os.path.join(self.single_image_path, dataset_name + '.jpg'))
-        bbox_info_array = np.array(parse_annotation_file(os.path.join(self.annotations_path, dataset_name + '.xml'), self.class_list))
+        crossed_image = Image.open(crossed_image_path)
+        single_image = Image.open(single_image_path)
+        gt_boxes_position = self.parse_annotation_file(annotation_path)  # [x_min, y_min, x_max, y_max]
 
-        # bbox_info 的格式为 [x_min, y_min, x_max, y_max, cla_idx]
+        crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
 
-        if self.class_num == 1:
-            bbox_info_array[:, 4] = 0  # 单份类问题的 cla_idx 都置为相同的数
+        s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
 
+        return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+
+    def __len__(self):
+        return len(self.dataset_list)
+
+    @staticmethod
+    def parse_annotation_file(annotation_file):
+        bbox_info_list = []
+        root = Et.parse(annotation_file).getroot()
+
+        for obj in root.findall('object'):
+            bbox_obj = obj.find('bndbox')
+
+            x_min = int(bbox_obj.find('xmin').text)
+            y_min = int(bbox_obj.find('ymin').text)
+            x_max = int(bbox_obj.find('xmax').text)
+            y_max = int(bbox_obj.find('ymax').text)
+
+            bbox_info_list.append([x_min, y_min, x_max, y_max])
+
+        return torch.tensor(bbox_info_list).float()
+
+    def transform_data(self, crossed_image, single_image, gt_boxes_position):
         w, h = crossed_image.size
-        scale = min(self.input_image_size / w, self.input_image_size / h)
+        scale = min(self.input_size / w, self.input_size / h)
         resize_w, resize_h = int(w * scale), int(h * scale)
-        pad_x, pad_y = (self.input_image_size - resize_w) // 2, (self.input_image_size - resize_h) // 2
+        pad_x, pad_y = (self.input_size - resize_w) // 2, (self.input_size - resize_h) // 2
 
         transform_image = transforms.Compose([
             transforms.Resize((resize_h, resize_w)),
@@ -57,71 +80,86 @@ class GravelDataset(data.Dataset):
         single_image = transform_image(single_image)
 
         # bbox 的尺寸位置也要跟着 image 的变形而变化
-        bbox_info_array[:, [0, 2]] = bbox_info_array[:, [0, 2]] * scale + pad_x
-        bbox_info_array[:, [1, 3]] = bbox_info_array[:, [1, 3]] * scale + pad_y
+        gt_boxes_position[:, [0, 2]] = gt_boxes_position[:, [0, 2]] * scale + pad_x
+        gt_boxes_position[:, [1, 3]] = gt_boxes_position[:, [1, 3]] * scale + pad_y
 
-        s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_true_bboxes_to_tensor(bbox_info_array)
+        return crossed_image, single_image, gt_boxes_position
 
-        return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+    def encode_gt_bboxes(self, gt_boxes_position, iou_thresh):
+        max_boxes_per_scale = 150
 
-    def __len__(self):
-        return len(self.dataset_list)
+        # 3 scale output tensor from model
+        s_tensor = torch.zeros((self.s_output_size, self.s_output_size, self.s_anchors.shape[0], 5))
+        m_tensor = torch.zeros((self.m_output_size, self.m_output_size, self.m_anchors.shape[0], 5))
+        l_tensor = torch.zeros((self.l_output_size, self.l_output_size, self.l_anchors.shape[0], 5))
 
-    def encode_true_bboxes_to_tensor(self, bbox_info_array):
-        s_output_size, m_output_size, l_output_size = self.output_size  # 小、中、大尺度检测
+        # Save valid vector of保存不同尺度下的生成有效 tensor 中向量的 bbox 尺寸，保持相同的大小是为了多个矩阵成功组成一个 batch，0 为计数器
+        s_coords = [torch.zeros((max_boxes_per_scale, 4)), 0]
+        m_coords = [torch.zeros((max_boxes_per_scale, 4)), 0]
+        l_coords = [torch.zeros((max_boxes_per_scale, 4)), 0]
 
-        # 网络中各个尺度的输出张量尺寸
-        s_tensor = np.zeros((s_output_size, s_output_size, self.anchor_per_scale, 5 + self.class_num))
-        m_tensor = np.zeros((m_output_size, m_output_size, self.anchor_per_scale, 5 + self.class_num))
-        l_tensor = np.zeros((l_output_size, l_output_size, self.anchor_per_scale, 5 + self.class_num))
+        # Map a gt box to output tensor
+        for position in gt_boxes_position:
+            # Convert position to coordination [x, y, w, h]
+            coord = torch.cat([(position[2:] + position[:2]) * 0.5, position[2:] - position[:2]], dim=-1)
 
-        # 保存不同尺度下的生成有效 tensor 中向量的 bbox 尺寸，保持相同的大小是为了多个矩阵成功组成一个 batch，0 为计数器
-        s_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
-        m_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
-        l_coords = [np.zeros((self.max_bbox_per_scale, 4)), 0]
+            # Coordination at different scales of the box
+            s_coord, m_coord, l_coord = coord / self.s_scale, coord / self.m_scale, coord / self.l_scale
 
-        # 将 ground truth 的信息映射到与网络输出尺寸相同的张量上
-        for bbox in bbox_info_array:
-            location = bbox[:4]  # bbox 的位置信息，为 [x_min, y_min, x_max, y_max]
-            coord = np.concatenate([(location[2:] + location[:2]) * 0.5, location[2:] - location[:2]], axis=-1)  # 转换为坐标信息 [x, y, w, h]
-            s_coord, m_coord, l_coord = 1.0 * coord[np.newaxis, :] / self.detection_scale[:, np.newaxis]  # bbox 在不同尺度下的坐标
+            # Compute one vector of tensor corresponding to the gt box center
+            s_iou, s_tensor, s_coords, s_has_positive = self.compute_vector(s_tensor, s_coords, self.s_anchors, s_coord, coord, iou_thresh)
+            m_iou, m_tensor, m_coords, m_has_positive = self.compute_vector(m_tensor, m_coords, self.m_anchors, m_coord, coord, iou_thresh)
+            l_iou, l_tensor, l_coords, l_has_positive = self.compute_vector(l_tensor, l_coords, self.l_anchors, l_coord, coord, iou_thresh)
 
-            cla = bbox[4]  # bbox 的分类信息
-            cla_conf = utils.smooth_onehot(num=self.class_num, idx=cla, delta=0.01)  # 将分类信息使用 smooth onehot 转换为各类别的分布信息
-
-            s_anchor_size, m_anchor_size, l_anchor_size = self.anchors  # 将9个 anchor 分配给3种尺度检测，每种尺度有3个 anchor
-
-            s_iou, s_tensor, s_coords, s_is_positive_example = \
-                utils.compute_vectors_of_one_bbox(s_coord, coord, cla_conf, s_anchor_size, s_tensor, s_coords, anchor_num=self.anchor_per_scale)
-            m_iou, m_tensor, m_coords, m_is_positive_example = \
-                utils.compute_vectors_of_one_bbox(m_coord, coord, cla_conf, m_anchor_size, m_tensor, m_coords, anchor_num=self.anchor_per_scale)
-            l_iou, l_tensor, l_coords, l_is_positive_example = \
-                utils.compute_vectors_of_one_bbox(l_coord, coord, cla_conf, l_anchor_size, l_tensor, l_coords, anchor_num=self.anchor_per_scale)
-
-            # 如果三个尺度都没有符合 IoU 要求的 anchor box，那么就把 IoU 最大的拿出来
-            if not s_is_positive_example and not m_is_positive_example and not l_is_positive_example:
-                s_iou = np.array(s_iou).reshape(-1)
-                m_iou = np.array(m_iou).reshape(-1)
-                l_iou = np.array(l_iou).reshape(-1)
-
-                iou_list = np.concatenate([s_iou, m_iou, l_iou], axis=-1)
-                best_anchor_idx = np.argmax(iou_list, axis=-1)
-                best_scale = int(best_anchor_idx / self.anchor_per_scale)
-                best_anchor = int(best_anchor_idx % self.anchor_per_scale)
+            # If there's no valid vector, taking out the vector of largest IoU
+            if not (s_has_positive or m_has_positive or l_has_positive):
+                iou_list = torch.cat([s_iou, m_iou, l_iou], dim=-1)
+                best_idx = torch.argmax(iou_list, dim=-1)
+                best_scale = int(best_idx / self.s_anchors.shape[0])
+                best_anchor = int(best_idx % self.s_anchors.shape[0])
 
                 if best_scale == 0:
-                    s_tensor, s_coords = utils.compute_valid_vectors_of_one_bbox(s_coord, coord, best_anchor, cla_conf, s_tensor, s_coords)
+                    s_tensor, s_coords = self.compute_valid_vectors(s_tensor, s_coords, s_coord, coord, best_anchor)
                 elif best_scale == 1:
-                    m_tensor, m_coords = utils.compute_valid_vectors_of_one_bbox(m_coord, coord, best_anchor, cla_conf, m_tensor, m_coords)
+                    m_tensor, m_coords = self.compute_valid_vectors(m_tensor, m_coords, m_coord, coord, best_anchor)
                 else:
-                    l_tensor, l_coords = utils.compute_valid_vectors_of_one_bbox(l_coord, coord, best_anchor, cla_conf, l_tensor, l_coords)
+                    l_tensor, l_coords = self.compute_valid_vectors(l_tensor, l_coords, l_coord, coord, best_anchor)
 
-        s_tensor = torch.tensor(s_tensor, dtype=torch.float32)
-        m_tensor = torch.tensor(m_tensor, dtype=torch.float32)
-        l_tensor = torch.tensor(l_tensor, dtype=torch.float32)
+        return s_tensor, m_tensor, l_tensor, s_coords[0], m_coords[0], l_coords[0]
 
-        s_coords = torch.tensor(np.array(s_coords[0]), dtype=torch.float32)
-        m_coords = torch.tensor(np.array(m_coords[0]), dtype=torch.float32)
-        l_coords = torch.tensor(np.array(l_coords[0]), dtype=torch.float32)
+    def compute_vector(self, tensor, coords, anchors, scale_coord, raw_coord, iou_thresh):
+        anchor_coord = torch.zeros((anchors.shape[0], 4))
+        anchor_coord[:, 0:2] = scale_coord[0:2].floor() + 0.5  # Center coordination is center of the cell where center of box locates
+        anchor_coord[:, 2:4] = anchors  # The size is anchors' size
 
-        return s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+        iou = compute_iou(anchor_coord, scale_coord)  # Compute IoU between scaled box and some anchor box
+        iou_mask = torch.gt(iou, iou_thresh)  # Is IoU > thresh
+
+        has_positive = False
+
+        if torch.any(iou_mask):
+            has_positive = True
+            tensor, coords = self.compute_valid_vectors(tensor, coords, scale_coord, raw_coord, iou_mask)
+
+        return iou, tensor, coords, has_positive
+
+    @staticmethod
+    def compute_valid_vectors(tensor, coords, scale_coord, raw_coord, mask):
+        x_idx, y_idx = torch.floor(scale_coord[0:2]).long()  # Coordination of grid cell
+
+        # Reduce the sensitivity of data
+        x_idx, y_idx = torch.abs(x_idx), torch.abs(y_idx)
+        if y_idx >= tensor.shape[1]:
+            y_idx = tensor.shape[1] - 1
+        if x_idx >= tensor.shape[0]:
+            x_idx = tensor.shape[0] - 1
+
+        tensor[y_idx, x_idx, mask, :] = 0
+
+        tensor[y_idx, x_idx, mask, 0:4] = raw_coord
+        tensor[y_idx, x_idx, mask, 4:5] = 1.0
+
+        coords[0][coords[1], :] = raw_coord
+        coords[1] += 1
+
+        return tensor, coords

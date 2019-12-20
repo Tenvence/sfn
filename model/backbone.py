@@ -1,5 +1,5 @@
 import torch.nn as nn
-import net.module as module
+import model.module as module
 
 
 class Darknet53(nn.Module):

@@ -4,7 +4,7 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 import xml.etree.cElementTree as Et
 from PIL import Image
-from utils.utils import compute_iou
+from utils.iou import compute_iou
 
 
 class GravelDataset(data.Dataset):

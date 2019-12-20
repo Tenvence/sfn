@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import utils.utils as utils
+import utils.iou as utils
 import utils.config as cfg
 from torch.utils.data import DataLoader
 from tqdm import tqdm

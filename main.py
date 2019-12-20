@@ -27,7 +27,7 @@ class Train:
         self.model.train()
 
         self.optimizer = Adam(self.model.parameters(), weight_decay=0.0005)
-        self.criterion = Loss(self.anchors, input_size=608, iou_threshold=0.5)
+        self.criterion = Loss(self.anchors, input_size=608, iou_thresh=0.5)
 
     def run(self, epoch_num, warm_epoch_num, parameters_save_path):
         steps_per_epoch = len(self.data_loader)
@@ -39,22 +39,26 @@ class Train:
         for epoch in range(epoch_num):
             process_bar = tqdm(self.data_loader)
             for d in process_bar:
-                crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = d
-                #
-                # if torch.cuda.is_available():
-                #     crossed_image = crossed_image.to(device=self.device)
-                #     single_image = single_image.to(device=self.device)
-                #     boxes_position_output = boxes_position_output.to(device=self.device)
-                #     boxes_num = boxes_num.to(device=self.device)
-                #
-                # self.optimizer.zero_grad()
-                # s_tensor, m_tensor, l_tensor = self.model(crossed_image)
-                # loss = self.criterion(s_tensor, m_tensor, l_tensor, boxes_position_output, boxes_num)
-                # loss.backward()
-                # self.optimizer.step()
-                # lr_scheduler.step(step_idx)
-                # step_idx += 1
-                # process_bar.set_description("train loss is %.2f" % float(loss))
+                crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords = d
+
+                if torch.cuda.is_available():
+                    crossed_image = crossed_image.to(device=self.device)
+                    single_image = single_image.to(device=self.device)
+                    s_gt_tensor = s_gt_tensor.to(device=self.device)
+                    m_gt_tensor = m_gt_tensor.to(device=self.device)
+                    l_gt_tensor = l_gt_tensor.to(device=self.device)
+                    s_gt_coords = s_gt_coords.to(device=self.device)
+                    m_gt_coords = m_gt_coords.to(device=self.device)
+                    l_gt_coords = l_gt_coords.to(device=self.device)
+
+                self.optimizer.zero_grad()
+                s_output, m_output, l_output = self.model(crossed_image)
+                loss = self.criterion(s_output, m_output, l_output, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords)
+                loss.backward()
+                self.optimizer.step()
+                lr_scheduler.step(step_idx)
+                step_idx += 1
+                process_bar.set_description("train loss is %.2f" % float(loss))
 
         torch.save(self.model.state_dict(), parameters_save_path)
 

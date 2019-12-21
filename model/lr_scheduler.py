@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -15,4 +14,4 @@ class LinearCosineScheduler(LambdaLR):
         if step < self.warm_steps:
             return step / self.warm_steps
         else:
-            return self.max_lr + 0.5 * (1 - self.max_lr) * (1 + torch.cos((step - self.warm_steps) / (self.total_steps - self.warm_steps) * np.pi))
+            return self.max_lr + 0.5 * (1 - self.max_lr) * (1 + np.cos((step - self.warm_steps) / (self.total_steps - self.warm_steps) * np.pi))

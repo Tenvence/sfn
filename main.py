@@ -44,9 +44,11 @@ class Train:
                 if torch.cuda.is_available():
                     crossed_image = crossed_image.to(device=self.device)
                     single_image = single_image.to(device=self.device)
+
                     s_gt_tensor = s_gt_tensor.to(device=self.device)
                     m_gt_tensor = m_gt_tensor.to(device=self.device)
                     l_gt_tensor = l_gt_tensor.to(device=self.device)
+
                     s_gt_coords = s_gt_coords.to(device=self.device)
                     m_gt_coords = m_gt_coords.to(device=self.device)
                     l_gt_coords = l_gt_coords.to(device=self.device)
@@ -58,11 +60,11 @@ class Train:
                 self.optimizer.step()
                 lr_scheduler.step(step_idx)
                 step_idx += 1
-                process_bar.set_description("train loss is %.2f" % float(loss))
+                process_bar.set_description("epoch: %d, loss: %.2f" % (epoch, float(loss)))
 
         torch.save(self.model.state_dict(), parameters_save_path)
 
 
 if __name__ == '__main__':
     train = Train(anchors=get_anchors(cfg.ANCHOR_FILE_PATH), batch_size=10, device=torch.device('cuda:0'))
-    train.run(epoch_num=30, warm_epoch_num=2, parameters_save_path='./saved_model/parameters.pkl')
+    train.run(epoch_num=30, warm_epoch_num=2, parameters_save_path='./output/parameters.pkl')

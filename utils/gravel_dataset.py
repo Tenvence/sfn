@@ -1,23 +1,22 @@
 import os
+import xml.etree.cElementTree as Et
+
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
-import xml.etree.cElementTree as Et
 from PIL import Image
+
 from utils.iou import compute_iou
 
 
 class GravelDataset(data.Dataset):
-    def __init__(self, anchors, crossed_image_dir_path, single_image_dir_path, annotation_dir_path, data_list, model_input_size, model_s_scale,
-                 model_m_scale, model_l_scale, iou_thresh):
+    def __init__(self, anchors, crossed_image_dir_path, single_image_dir_path, annotation_dir_path, data_list, model_input_size, model_scale, device):
         self.crossed_image_dir_path = crossed_image_dir_path
         self.single_image_dir_path = single_image_dir_path
         self.annotations_dir_path = annotation_dir_path
 
         self.input_size = model_input_size
-        self.s_scale = model_s_scale
-        self.m_scale = model_m_scale
-        self.l_scale = model_l_scale
+        self.s_scale, self.m_scale, self.l_scale = model_scale
         self.s_output_size = self.input_size // self.s_scale
         self.m_output_size = self.input_size // self.m_scale
         self.l_output_size = self.input_size // self.l_scale
@@ -26,7 +25,9 @@ class GravelDataset(data.Dataset):
 
         self.s_anchors, self.m_anchors, self.l_anchors = anchors
 
-        self.iou_thresh = iou_thresh
+        self.device = device
+
+        self.iou_thresh = 0.3
 
     def __getitem__(self, index):
         dataset_name = self.dataset_list[index]
@@ -41,6 +42,11 @@ class GravelDataset(data.Dataset):
         crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
 
         s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
+
+        if torch.cuda.is_available():
+            crossed_image, single_image = crossed_image.to(self.device), single_image.to(self.device)
+            s_tensor, m_tensor, l_tensor = s_tensor.to(self.device), m_tensor.to(self.device), l_tensor.to(self.device)
+            s_coords, m_coords, l_coords = s_coords.to(self.device), m_coords.to(self.device), l_coords.to(self.device)
 
         return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
 

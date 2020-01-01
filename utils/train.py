@@ -16,9 +16,10 @@ class Train:
         self.data_loader = DataLoader(dataset, batch_size, shuffle=True)
 
         self.model = Yolov3Net(anchors)
+        self.model.train()
+
         if torch.cuda.is_available():
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
-        self.model.train()
 
         self.optimizer = Adam(self.model.parameters(), weight_decay=0.0005)
         self.criterion = Loss(self.anchors, input_size=input_size)

@@ -1,6 +1,4 @@
 import torch
-from torchvision.ops import nms
-import numpy as np
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -13,12 +11,11 @@ class Test:
         self.device = device
         self.anchors = anchors
         self.model = Yolov3Net(anchors)
-        if torch.cuda.is_available():
-            print(True)
-            self.model = torch.nn.DataParallel(self.model).to(device=self.device)
-        self.model = self.model.to(device)
         self.model.load_state_dict(torch.load(param_file, map_location=self.device))
         self.model.eval()
+
+        if torch.cuda.is_available():
+            self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
     def run(self):
         print('test running')
@@ -26,36 +23,22 @@ class Test:
         for d in process_bar:
             crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords = d
 
-            if torch.cuda.is_available():
-                crossed_image = crossed_image.to(device=self.device)
-                single_image = single_image.to(device=self.device)
-
-                s_gt_tensor = s_gt_tensor.to(device=self.device)
-                m_gt_tensor = m_gt_tensor.to(device=self.device)
-                l_gt_tensor = l_gt_tensor.to(device=self.device)
-
-                s_gt_coords = s_gt_coords.to(device=self.device)
-                m_gt_coords = m_gt_coords.to(device=self.device)
-                l_gt_coords = l_gt_coords.to(device=self.device)
-
             s_output, m_output, l_output = self.model(crossed_image)
             s_anchors, m_anchors, l_anchors = self.anchors
+
             s_output = s_output.reshape((-1, 5))
             m_output = m_output.reshape((-1, 5))
             l_output = l_output.reshape((-1, 5))
             pred_box = torch.cat([s_output, m_output, l_output], dim=0)
-            print(pred_box.shape)
+
             pred_coord = pred_box[:, 0:4]
             pred_coord = torch.cat([pred_coord[:, :2] - pred_coord[:, 2:] * 0.5, pred_coord[:, :2] + pred_coord[:, 2:] * 0.5], dim=-1)
             pred_conf = pred_box[:, 4:]
 
-            print(nms(pred_coord.cpu(), pred_conf.cpu(), 0.45))
-            exit(-1)
-
-            # score_thresh = 0.3
-            # score_mask = torch.gt(pred_conf, score_thresh).repeat(1, 4)
+            score_thresh = 0.3
+            score_mask = torch.gt(pred_conf, score_thresh).repeat(1, 4)
             # print(pred_coord.shape, score_mask.shape)
-            # pred_coord = pred_coord[score_mask]
+            pred_coord = pred_coord[score_mask]
             # print(pred_coord.shape)
             # exit(-1)
 
@@ -110,3 +93,7 @@ class Test:
             # process_bar.set_description(str(res.shape))
             #
             # # exit(-1)
+
+    @staticmethod
+    def nms():
+        pass

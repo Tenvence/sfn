@@ -6,23 +6,24 @@ from tqdm import tqdm
 from model.loss import Loss
 from model.lr_scheduler import LinearCosineScheduler
 from model.yolov3_net import Yolov3Net
+from utils.gravel_dataset import GravelDataset
 
 
 class Train:
-    def __init__(self, anchors, dataset, input_size, batch_size, device=torch.device('cpu')):
-        self.anchors = anchors
+    def __init__(self, dataset, batch_size, device=torch.device('cpu')):
+        self.anchors = dataset.s_anchors, dataset.m_anchors, dataset.l_anchors
         self.device = device
 
         self.data_loader = DataLoader(dataset, batch_size, shuffle=True)
 
-        self.model = Yolov3Net(anchors)
+        self.model = Yolov3Net(self.anchors)
         self.model.train()
 
         if torch.cuda.is_available():
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
         self.optimizer = Adam(self.model.parameters(), weight_decay=0.0005)
-        self.criterion = Loss(self.anchors, input_size=input_size)
+        self.criterion = Loss(self.anchors, input_size=dataset.input_size)
 
     def run(self, epoch_num, warm_epoch_num, output_path):
         steps_per_epoch = len(self.data_loader)

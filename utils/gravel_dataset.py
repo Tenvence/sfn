@@ -10,13 +10,12 @@ from utils.iou import compute_iou
 
 
 class GravelDataset(data.Dataset):
-    def __init__(self, anchors, crossed_image_dir_path, single_image_dir_path, annotation_dir_path, data_list, model_input_size, model_scale, device):
-        self.crossed_image_dir_path = crossed_image_dir_path
-        self.single_image_dir_path = single_image_dir_path
+    def __init__(self, anchors, image_dir_path, annotation_dir_path, data_list, input_size, scale, device, train):
+        self.crossed_image_dir_path, self.single_image_dir_path = image_dir_path
         self.annotations_dir_path = annotation_dir_path
 
-        self.input_size = model_input_size
-        self.s_scale, self.m_scale, self.l_scale = model_scale
+        self.input_size = input_size
+        self.s_scale, self.m_scale, self.l_scale = scale
         self.s_output_size = self.input_size // self.s_scale
         self.m_output_size = self.input_size // self.m_scale
         self.l_output_size = self.input_size // self.l_scale
@@ -26,6 +25,8 @@ class GravelDataset(data.Dataset):
         self.s_anchors, self.m_anchors, self.l_anchors = anchors
 
         self.device = device
+
+        self.train = train
 
         self.iou_thresh = 0.3
 
@@ -37,6 +38,9 @@ class GravelDataset(data.Dataset):
 
         crossed_image = Image.open(crossed_image_path)
         single_image = Image.open(single_image_path)
+
+        w, h = crossed_image.size
+
         gt_boxes_position = self.parse_annotation_file(annotation_path)  # [x_min, y_min, x_max, y_max]
 
         crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
@@ -48,7 +52,10 @@ class GravelDataset(data.Dataset):
             s_tensor, m_tensor, l_tensor = s_tensor.to(self.device), m_tensor.to(self.device), l_tensor.to(self.device)
             s_coords, m_coords, l_coords = s_coords.to(self.device), m_coords.to(self.device), l_coords.to(self.device)
 
-        return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+        if self.train:
+            return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+        else:
+            return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords, w, h
 
     def __len__(self):
         return len(self.dataset_list)

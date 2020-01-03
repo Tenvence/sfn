@@ -8,7 +8,7 @@ class Yolov3Net(nn.Module):
     def __init__(self, anchors):
         super(Yolov3Net, self).__init__()
 
-        output_channels = anchors.shape[1] * 5
+        output_channels = len(anchors) * 5
 
         self.backbone = backbone.Darknet53()
 
@@ -29,9 +29,9 @@ class Yolov3Net(nn.Module):
         self.conv_s = module.ConvolutionModule(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1)
         self.conv_s_output = nn.Conv2d(in_channels=256, out_channels=output_channels, kernel_size=1, stride=1, padding=0)
 
-        self.decode_l = module.DecodeModule(anchors[2, :, :], scale=32)
-        self.decode_m = module.DecodeModule(anchors[1, :, :], scale=16)
-        self.decode_s = module.DecodeModule(anchors[0, :, :], scale=8)
+        self.decode_l = module.DecodeModule(anchors[2], scale=32)
+        self.decode_m = module.DecodeModule(anchors[1], scale=16)
+        self.decode_s = module.DecodeModule(anchors[0], scale=8)
 
         nn.init.constant_(self.conv_l_output.bias, 0.)
         nn.init.constant_(self.conv_m_output.bias, 0.)

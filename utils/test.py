@@ -1,15 +1,25 @@
+import numpy as np
+import cv2
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from model.yolov3_net import Yolov3Net
+from utils.iou import compute_iou
 
 
 class Test:
-    def __init__(self, anchors, batch_size, dataset, param_file, device):
-        self.data_loader = DataLoader(dataset, batch_size, shuffle=False)
+    def __init__(self, dataset, param_file, device):
+        print('Initialize test object ...')
+        self.data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
         self.device = device
-        self.anchors = anchors
+        self.input_size = dataset.input_size
+
+        self.conf_thresh = 0.3
+        self.iou_thresh = 0.45
+
+        print('Loading model from %s ...' % param_file)
+        anchors = [dataset.s_anchors, dataset.m_anchors, dataset.l_anchors]
         self.model = Yolov3Net(anchors)
         self.model.load_state_dict(torch.load(param_file, map_location=self.device))
         self.model.eval()
@@ -17,83 +27,112 @@ class Test:
         if torch.cuda.is_available():
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
+        print('Model loading succeed.')
+
     def run(self):
-        print('test running')
+        print('Test running ...')
         process_bar = tqdm(self.data_loader)
         for d in process_bar:
-            crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords = d
+            crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords, w, h = d
 
             s_output, m_output, l_output = self.model(crossed_image)
-            s_anchors, m_anchors, l_anchors = self.anchors
 
             s_output = s_output.reshape((-1, 5))
             m_output = m_output.reshape((-1, 5))
             l_output = l_output.reshape((-1, 5))
             pred_box = torch.cat([s_output, m_output, l_output], dim=0)
 
-            pred_coord = pred_box[:, 0:4]
-            pred_coord = torch.cat([pred_coord[:, :2] - pred_coord[:, 2:] * 0.5, pred_coord[:, :2] + pred_coord[:, 2:] * 0.5], dim=-1)
-            pred_conf = pred_box[:, 4:]
+            pred_coord, pred_conf = self.postprocess_boxes(pred_box, w, h)
 
-            score_thresh = 0.3
-            score_mask = torch.gt(pred_conf, score_thresh).repeat(1, 4)
-            # print(pred_coord.shape, score_mask.shape)
-            pred_coord = pred_coord[score_mask]
-            # print(pred_coord.shape)
-            # exit(-1)
+            print(pred_conf.shape, pred_coord.shape)
 
-            # pred_bbox = torch.cat([s_output, m_output, l_output], dim=0)
-            # pred_bbox = np.array(pred_bbox.detach())
-            # # print(pred_bbox.shape)
-            # # print(s_output.shape, m_output.shape, l_output.shape, pred_bbox.shape)
-            # pred_xywh = pred_bbox[:, 0:4]
-            # pred_conf = pred_bbox[:, 4]
-            # pred_prob = pred_bbox[:, 5:]
-            # score_threshold = 0.3
-            #
-            # valid_scale = [0, np.inf]
-            #
-            # org_h = org_h.numpy()[0]
-            # org_w = org_w.numpy()[0]
-            #
-            # # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
-            # pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5, pred_xywh[:, :2] + pred_xywh[:, 2:] * 0.5], axis=-1)
-            # # # (2) (xmin, ymin, xmax, ymax) -> (xmin_org, ymin_org, xmax_org, ymax_org)
-            # resize_ratio = min(608 / org_w, 608 / org_h)
-            # # print(org_h, org_w)
-            #
-            # dw = (608 - resize_ratio * org_w) / 2
-            # dh = (608 - resize_ratio * org_h) / 2
-            #
-            # # print(dw, dh)
-            #
-            # pred_coor[:, 0::2] = 1.0 * (pred_coor[:, 0::2] - dw) / resize_ratio
-            # pred_coor[:, 1::2] = 1.0 * (pred_coor[:, 1::2] - dh) / resize_ratio
-            #
-            # # print(pred_coor[:, 0::2], pred_coor[:, 1::2])
-            #
-            # # # (3) clip some boxes those are out of range
-            # pred_coor = np.concatenate([np.maximum(pred_coor[:, :2], [0, 0]),
-            #                             np.minimum(pred_coor[:, 2:], [org_w - 1, org_h - 1])], axis=-1)
-            # invalid_mask = np.logical_or((pred_coor[:, 0] > pred_coor[:, 2]), (pred_coor[:, 1] > pred_coor[:, 3]))
-            # pred_coor[invalid_mask] = 0
-            #
-            # # # (4) discard some invalid boxes
-            # bboxes_scale = np.sqrt(np.multiply.reduce(pred_coor[:, 2:4] - pred_coor[:, 0:2], axis=-1))
-            # scale_mask = np.logical_and((valid_scale[0] < bboxes_scale), (bboxes_scale < valid_scale[1]))
-            #
-            # # # (5) discard some boxes with low scores
-            # classes = np.argmax(pred_prob, axis=-1)
-            # scores = pred_conf * pred_prob[np.arange(len(pred_coor)), classes]
-            # score_mask = scores > score_threshold
-            # mask = np.logical_and(scale_mask, score_mask)
-            # coors, scores, classes = pred_coor[mask], scores[mask], classes[mask]
-            #
-            # res = np.concatenate([coors, scores[:, np.newaxis], classes[:, np.newaxis]], axis=-1)
-            # process_bar.set_description(str(res.shape))
-            #
-            # # exit(-1)
+            # pred_boxes = self.nms(pred_coord, pred_conf)
 
-    @staticmethod
-    def nms():
-        pass
+            img = cv2.imread('./GravelDataset/Images+/000000.jpg')
+            for box in pred_coord:
+                # cv2.rectangle(img, (2, 10), (100, 1000), (255, 0, 0), 2)
+                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 1)
+
+            cv2.imwrite('./output/img.jpg', img)
+
+            exit(-1)
+
+    def postprocess_boxes(self, pred_box, w, h):
+        pred_coord = pred_box[:, 0:4]
+        pred_conf = pred_box[:, 4:]
+
+        # [x, y, w, h] -> [x_min, y_min, x_max, y_max]
+        pred_coord = torch.cat([pred_coord[:, :2] - pred_coord[:, 2:] * 0.5, pred_coord[:, :2] + pred_coord[:, 2:] * 0.5], dim=-1)
+
+        print(pred_coord.shape)
+
+        # [x_min, y_min, x_max, y_max] -> [x_min_org, y_min_org, x_max_org, y_max_org]
+        w = w.float()
+        h = h.float()
+        input_size = float(self.input_size)
+        resize_ratio = min(input_size / w, input_size / h)
+        dw = (input_size - resize_ratio * w) / 2
+        dh = (input_size - resize_ratio * h) / 2
+
+        if torch.cuda.is_available() and pred_coord.is_cuda:
+            dw = dw.to(device=pred_coord.device)
+            dh = dh.to(device=pred_coord.device)
+            resize_ratio = torch.tensor([resize_ratio]).to(device=pred_coord.device)
+
+        pred_coord[:, 0::2] = (pred_coord[:, 0::2] - dw) / resize_ratio
+        pred_coord[:, 1::2] = (pred_coord[:, 1::2] - dh) / resize_ratio
+
+        # clip some boxes which are out of range
+        left_up_point = torch.tensor([0, 0]).float()
+        right_down_point = torch.tensor([w - 1, h - 1]).float()
+
+        if torch.cuda.is_available() and pred_coord.is_cuda:
+            left_up_point = left_up_point.to(device=pred_coord.device)
+            right_down_point = right_down_point.to(device=pred_coord.device)
+
+        pred_coord = torch.cat([torch.max(pred_coord[:, :2], left_up_point), torch.min(pred_coord[:, 2:], right_down_point)], dim=-1)
+        invalid_mask = torch.gt(pred_coord[:, 0], pred_coord[:, 2]) | torch.gt(pred_coord[:, 1], pred_coord[:, 3])
+        pred_coord[invalid_mask] = 0
+
+        # discard some invalid boxes
+        box_scale = pred_coord[:, 2:4] - pred_coord[:, 0:2]
+        box_scale = torch.sqrt(box_scale[:, :1] * box_scale[:, 1:])
+        scale_mask = (box_scale > 0) & (box_scale < np.inf)
+
+        # discard some boxes with low scores
+        conf_mask = pred_conf > self.conf_thresh
+        mask = torch.squeeze(scale_mask & conf_mask)
+        pred_coord = pred_coord[mask]
+        pred_conf = pred_conf[mask]
+
+        return pred_coord, pred_conf
+
+    def nms(self, boxes, conf):
+        best_boxes = []
+
+        while boxes.shape[0] > 0:
+            print(boxes.shape[0])
+            max_idx = torch.argmax(conf)
+            print(max_idx)
+
+            best_box = boxes[max_idx]
+            best_conf = conf[max_idx]
+            best_boxes.append(torch.cat([best_box, best_conf]).detach().cpu().numpy())
+
+            # print(best_boxes)
+
+            boxes = torch.cat([boxes[:max_idx], boxes[max_idx + 1:]])
+            conf = torch.cat([conf[:max_idx], conf[max_idx + 1:]])
+            print(boxes.shape)
+
+            iou = compute_iou(best_box[np.newaxis, :4], boxes)
+            iou_mask = iou > self.iou_thresh
+
+            boxes = boxes[iou_mask]
+            conf = conf[iou_mask]
+
+            print(boxes.shape, conf.shape)
+
+            print(len(best_boxes))
+            print()
+        return best_boxes

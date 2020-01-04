@@ -1,7 +1,11 @@
 import torch
 
 
-def compute_iou(boxes1, boxes2):
+def compute_iou(boxes1, boxes2, is_regularize=True):
+    if is_regularize:
+        boxes1 = regularize_boxes(boxes1)
+        boxes2 = regularize_boxes(boxes2)
+
     inter_area, union_area, _ = compute_inter_union_area(boxes1, boxes2)
     iou = inter_area / union_area
 
@@ -9,6 +13,9 @@ def compute_iou(boxes1, boxes2):
 
 
 def compute_giou(boxes1, boxes2):
+    boxes1 = regularize_boxes(boxes1)
+    boxes2 = regularize_boxes(boxes2)
+
     inter_area, union_area, enclose_area = compute_inter_union_area(boxes1, boxes2)
 
     iou = inter_area / union_area
@@ -25,9 +32,6 @@ def regularize_boxes(boxes):
 
 
 def compute_inter_union_area(boxes1, boxes2):
-    boxes1 = regularize_boxes(boxes1)
-    boxes2 = regularize_boxes(boxes2)
-
     boxes1_area = (boxes1[..., 2] - boxes1[..., 0]) * (boxes1[..., 3] - boxes1[..., 1])
     boxes2_area = (boxes2[..., 2] - boxes2[..., 0]) * (boxes2[..., 3] - boxes2[..., 1])
 

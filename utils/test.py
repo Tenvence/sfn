@@ -46,14 +46,9 @@ class Test:
 
             print(pred_conf.shape, pred_coord.shape)
 
-            # pred_boxes = self.nms(pred_coord, pred_conf)
+            pred_boxes = self.nms(pred_coord, pred_conf)
 
-            img = cv2.imread('./GravelDataset/Images+/000000.jpg')
-            for box in pred_coord:
-                # cv2.rectangle(img, (2, 10), (100, 1000), (255, 0, 0), 2)
-                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 1)
-
-            cv2.imwrite('./output/img.jpg', img)
+            self.draw_rectangle(pred_boxes, 'result')
 
             exit(-1)
 
@@ -110,29 +105,34 @@ class Test:
     def nms(self, boxes, conf):
         best_boxes = []
 
+        i = 0
         while boxes.shape[0] > 0:
-            print(boxes.shape[0])
             max_idx = torch.argmax(conf)
-            print(max_idx)
 
             best_box = boxes[max_idx]
             best_conf = conf[max_idx]
             best_boxes.append(torch.cat([best_box, best_conf]).detach().cpu().numpy())
 
-            # print(best_boxes)
-
             boxes = torch.cat([boxes[:max_idx], boxes[max_idx + 1:]])
             conf = torch.cat([conf[:max_idx], conf[max_idx + 1:]])
-            print(boxes.shape)
 
-            iou = compute_iou(best_box[np.newaxis, :4], boxes)
-            iou_mask = iou > self.iou_thresh
+            iou = compute_iou(best_box[np.newaxis, :4], boxes, is_regularize=False)
+            iou_mask = iou < self.iou_thresh
 
             boxes = boxes[iou_mask]
             conf = conf[iou_mask]
 
-            print(boxes.shape, conf.shape)
-
             print(len(best_boxes))
-            print()
+
+            self.draw_rectangle(best_boxes, str(i))
+            i += 1
+
         return best_boxes
+
+    @staticmethod
+    def draw_rectangle(pred_coord, x):
+        img = cv2.imread('./GravelDataset/Images+/000000.jpg')
+        for box in pred_coord:
+            cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 1)
+
+        cv2.imwrite('./output/img_' + x + '.jpg', img)

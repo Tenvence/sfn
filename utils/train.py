@@ -38,7 +38,7 @@ class Train:
                 crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords = d
 
                 self.optimizer.zero_grad()
-                s_output, m_output, l_output = self.model(crossed_image)
+                s_output, m_output, l_output = self.model(crossed_image, single_image)
                 loss = self.criterion(s_output, m_output, l_output, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords)
                 loss.backward()
                 self.optimizer.step()

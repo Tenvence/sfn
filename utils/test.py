@@ -1,3 +1,6 @@
+import os
+import shutil
+
 import numpy as np
 import cv2
 import torch
@@ -9,8 +12,7 @@ from utils.iou import compute_iou
 
 
 class Test:
-    def __init__(self, dataset, param_file, device):
-        print('Initialize test object ...')
+    def __init__(self, dataset, param_file, device=torch.device('cpu')):
         self.data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
         self.device = device
         self.input_size = dataset.input_size
@@ -18,39 +20,61 @@ class Test:
         self.conf_thresh = 0.3
         self.iou_thresh = 0.45
 
-        print('Loading model from %s ...' % param_file)
         anchors = [dataset.s_anchors, dataset.m_anchors, dataset.l_anchors]
+
         self.model = Yolov3Net(anchors)
-        self.model.load_state_dict(torch.load(param_file, map_location=self.device))
-        self.model.eval()
 
         if torch.cuda.is_available():
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
-        print('Model loading succeed.')
+        self.model.load_state_dict(torch.load(param_file))
+        self.model.eval()
 
     def run(self):
-        print('Test running ...')
         process_bar = tqdm(self.data_loader)
-        for d in process_bar:
-            crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords, w, h = d
 
-            s_output, m_output, l_output = self.model(crossed_image)
+        predicted_dir_path = './mAP/predicted'
+        ground_truth_dir_path = './mAP/ground-truth'
+        result_image_dir_path = './mAP/result-image'
+
+        if os.path.exists(predicted_dir_path):
+            shutil.rmtree(predicted_dir_path)
+        if os.path.exists(ground_truth_dir_path):
+            shutil.rmtree(ground_truth_dir_path)
+        if os.path.exists(result_image_dir_path):
+            shutil.rmtree(result_image_dir_path)
+
+        os.mkdir(predicted_dir_path)
+        os.mkdir(ground_truth_dir_path)
+        os.mkdir(result_image_dir_path)
+
+        idx = 0
+        for d in process_bar:
+            crossed_image, single_image, crossed_image_raw, single_image_raw, gt_boxes_position_raw = d
+
+            with open(os.path.join(ground_truth_dir_path, str(idx) + '.txt'), 'w') as f:
+                for gt_box in gt_boxes_position_raw[0]:
+                    x_min, y_min, x_max, y_max = gt_box.numpy()
+                    f.write('gravel %d %d %d %d\n' % (x_min, y_min, x_max, y_max))
+
+            h, w = crossed_image_raw.shape[2], crossed_image_raw.shape[3]
+
+            s_output, m_output, l_output = self.model(crossed_image, single_image)
 
             s_output = s_output.reshape((-1, 5))
             m_output = m_output.reshape((-1, 5))
             l_output = l_output.reshape((-1, 5))
             pred_box = torch.cat([s_output, m_output, l_output], dim=0)
 
-            pred_coord, pred_conf = self.postprocess_boxes(pred_box, w, h)
-
-            print(pred_conf.shape, pred_coord.shape)
-
+            pred_coord, pred_conf = self.postprocess_boxes(pred_box, torch.tensor(w), torch.tensor(h))
             pred_boxes = self.nms(pred_coord, pred_conf)
 
-            self.draw_rectangle(pred_boxes, 'result')
+            with open(os.path.join(predicted_dir_path, str(idx) + '.txt'), 'w') as f:
+                for box in pred_boxes:
+                    x_min, y_min, x_max, y_max, conf = box
+                    f.write('gravel %.4f %d %d %d %d\n' % (conf, x_min, y_min, x_max, y_max))
 
-            exit(-1)
+            idx += 1
 
     def postprocess_boxes(self, pred_box, w, h):
         pred_coord = pred_box[:, 0:4]
@@ -58,8 +82,6 @@ class Test:
 
         # [x, y, w, h] -> [x_min, y_min, x_max, y_max]
         pred_coord = torch.cat([pred_coord[:, :2] - pred_coord[:, 2:] * 0.5, pred_coord[:, :2] + pred_coord[:, 2:] * 0.5], dim=-1)
-
-        print(pred_coord.shape)
 
         # [x_min, y_min, x_max, y_max] -> [x_min_org, y_min_org, x_max_org, y_max_org]
         w = w.float()
@@ -105,7 +127,6 @@ class Test:
     def nms(self, boxes, conf):
         best_boxes = []
 
-        i = 0
         while boxes.shape[0] > 0:
             max_idx = torch.argmax(conf)
 
@@ -122,17 +143,15 @@ class Test:
             boxes = boxes[iou_mask]
             conf = conf[iou_mask]
 
-            print(len(best_boxes))
-
-            self.draw_rectangle(best_boxes, str(i))
-            i += 1
-
         return best_boxes
 
-    @staticmethod
-    def draw_rectangle(pred_coord, x):
-        img = cv2.imread('./GravelDataset/Images+/000000.jpg')
-        for box in pred_coord:
-            cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), (255, 0, 0), 1)
+    def draw_eval_file(self):
 
-        cv2.imwrite('./output/img_' + x + '.jpg', img)
+        pass
+
+    @staticmethod
+    def draw_rectangle(image, pred_coord, color=(0, 255, 0), thickness=5):
+        for box in pred_coord:
+            cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), color, thickness)
+
+        return image

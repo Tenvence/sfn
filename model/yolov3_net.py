@@ -10,7 +10,7 @@ class Yolov3Net(nn.Module):
 
         output_channels = len(anchors) * 5
 
-        self.backbone = backbone.Darknet53()
+        self.backbone = backbone.DualDarknet53()
 
         self.up_sample_1 = nn.UpsamplingNearest2d(scale_factor=2)
         self.up_sample_m = nn.UpsamplingNearest2d(scale_factor=2)
@@ -41,8 +41,8 @@ class Yolov3Net(nn.Module):
         nn.init.normal_(self.conv_m_output.weight, std=0.01)
         nn.init.normal_(self.conv_s_output.weight, std=0.01)
 
-    def forward(self, x):
-        route_s, route_m, route_l = self.backbone(x)
+    def forward(self, x1, x2):
+        route_s, route_m, route_l = self.backbone(x1, x2)
 
         route_l = self.conv_set_l(route_l)
 

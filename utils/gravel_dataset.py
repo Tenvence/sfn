@@ -1,6 +1,7 @@
 import os
 import xml.etree.cElementTree as Et
 
+import cv2
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
@@ -39,23 +40,25 @@ class GravelDataset(data.Dataset):
         crossed_image = Image.open(crossed_image_path)
         single_image = Image.open(single_image_path)
 
-        w, h = crossed_image.size
-
         gt_boxes_position = self.parse_annotation_file(annotation_path)  # [x_min, y_min, x_max, y_max]
 
+        raw = [transforms.ToTensor()(crossed_image), transforms.ToTensor()(single_image), self.parse_annotation_file(annotation_path)]
+
         crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
+
+        if torch.cuda.is_available():
+            crossed_image, single_image = crossed_image.to(self.device), single_image.to(self.device)
+
+        if not self.train:
+            return crossed_image, single_image, raw[0], raw[1], raw[2]
 
         s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
 
         if torch.cuda.is_available():
-            crossed_image, single_image = crossed_image.to(self.device), single_image.to(self.device)
             s_tensor, m_tensor, l_tensor = s_tensor.to(self.device), m_tensor.to(self.device), l_tensor.to(self.device)
             s_coords, m_coords, l_coords = s_coords.to(self.device), m_coords.to(self.device), l_coords.to(self.device)
 
-        if self.train:
-            return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
-        else:
-            return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords, w, h
+        return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
 
     def __len__(self):
         return len(self.dataset_list)

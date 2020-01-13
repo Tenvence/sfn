@@ -1,20 +1,23 @@
-import sys
 import argparse
+
 import torch
+from torch.utils.tensorboard.writer import SummaryWriter
 
 import utils.config as cfg
 from utils.gravel_dataset import GravelDataset
 from utils.read import get_anchors, get_dataset_list
-from utils.train import Train
 from utils.test import Test
+from utils.train import Train
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--type', default='all', help='')
-    arg_parser.add_argument('--device', default='cpu', help='ssss')
-    arg_parser.add_argument('--batch_size', default=4, help='batch size')
-    arg_parser.add_argument('--epochs', default=30, help='epoch num')
-    arg_parser.parse_args()
+    arg_parser.add_argument('-n', default='default', help='train and test process name, default name is \'default\'')
+    name = arg_parser.parse_args().n
+
+    log_dir = './output/%s' % name
+    # writer = SummaryWriter()
+    print('NAME                | %s' % name)
+    print('TENSORBOARD log_dir | %s' % log_dir)
 
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -32,10 +35,13 @@ if __name__ == '__main__':
     scale = [s_scale, m_scale, l_scale]
     batch_size = 10
 
-    # train_dataset = GravelDataset(anchors, image_path, annotation_path, train_data_list, input_size, scale, device, train=True)
-    # train = Train(train_dataset, batch_size, device)
-    # train.run(epoch_num=30, warm_epoch_num=2, output_path='output/parameters.pkl')
+#     train_dataset = GravelDataset(anchors, image_path, annotation_path, train_data_list, input_size, scale, device, train=True)
+#     train = Train(train_dataset, batch_size, device)
+#     train.run(epoch_num=30, warm_epoch_num=2, output_path='./output/parameters_new_2_dual.pkl')
 
     test_dataset = GravelDataset(anchors, image_path, annotation_path, test_data_list, input_size, scale, device, train=False)
-    test = Test(test_dataset, './output/parameters.pkl', device)
+    test = Test(test_dataset, './output/parameters_new_2_dual.pkl', device)
     test.run()
+
+    # writer.flush()
+    # writer.close()

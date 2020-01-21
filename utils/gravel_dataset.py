@@ -1,4 +1,5 @@
 import os
+import shutil
 import xml.etree.cElementTree as Et
 
 import cv2
@@ -12,8 +13,8 @@ from utils.iou import compute_iou
 
 class GravelDataset(data.Dataset):
     def __init__(self, anchors, image_dir_path, annotation_dir_path, data_list, input_size, scale, device, train):
-        self.crossed_image_dir_path, self.single_image_dir_path = image_dir_path
-        self.annotations_dir_path = annotation_dir_path
+        self.crossed_image_dir_path, self.single_image_dir_path, self.crossed_image_train_dir_path, self.single_image_train_dir_path = image_dir_path
+        self.annotations_dir_path, self.annotations_train_dir_path = annotation_dir_path
 
         self.input_size = input_size
         self.s_scale, self.m_scale, self.l_scale = scale
@@ -31,34 +32,88 @@ class GravelDataset(data.Dataset):
 
         self.iou_thresh = 0.3
 
+        if (not os.path.exists(self.crossed_image_train_dir_path)) or (not os.path.exists(self.single_image_train_dir_path)) or \
+                (not os.path.exists(self.annotations_train_dir_path)):
+            if os.path.exists(self.crossed_image_train_dir_path):
+                shutil.rmtree(self.crossed_image_train_dir_path)
+
+            if os.path.exists(self.single_image_train_dir_path):
+                shutil.rmtree(self.single_image_train_dir_path)
+
+            if os.path.exists(self.annotations_train_dir_path):
+                shutil.rmtree(self.annotations_train_dir_path)
+
+            os.makedirs(self.crossed_image_train_dir_path)
+            os.makedirs(self.single_image_train_dir_path)
+            os.makedirs(self.annotations_train_dir_path)
+
+            for p in os.listdir(self.annotations_dir_path):
+                dataset_name = p.replace('.xml', '')
+                crossed_image_path = os.path.join(self.crossed_image_dir_path, dataset_name + '.jpg')
+                single_image_path = os.path.join(self.single_image_dir_path, dataset_name + '.jpg')
+                crossed_image_train_path = os.path.join(self.crossed_image_train_dir_path, dataset_name + '.jpg')
+                single_image_train_path = os.path.join(self.single_image_train_dir_path, dataset_name + '.jpg')
+
+                annotation_path = os.path.join(self.annotations_dir_path, dataset_name + '.xml')
+                annotation_train_path = os.path.join(self.annotations_train_dir_path, dataset_name + '.xml')
+
+                crossed_image = Image.open(crossed_image_path)
+                single_image = Image.open(single_image_path)
+                gt_boxes_position = self.parse_annotation_file(annotation_path)
+                crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
+
+                crossed_image.save(crossed_image_train_path)
+                single_image.save(single_image_train_path)
+
+                shutil.copyfile(annotation_path, annotation_train_path)
+
+                doc = Et.parse(annotation_train_path)
+                root = doc.getroot()
+                for i, obj in enumerate(root.findall('object')):
+                    bbox_obj = obj.find('bndbox')
+                    bbox_obj.find('xmin').text = str(gt_boxes_position[i][0].numpy())
+                    bbox_obj.find('ymin').text = str(gt_boxes_position[i][1].numpy())
+                    bbox_obj.find('xmax').text = str(gt_boxes_position[i][2].numpy())
+                    bbox_obj.find('ymax').text = str(gt_boxes_position[i][3].numpy())
+                doc.write(annotation_train_path)
+
     def __getitem__(self, index):
         dataset_name = self.dataset_list[index]
+
         crossed_image_path = os.path.join(self.crossed_image_dir_path, dataset_name + '.jpg')
         single_image_path = os.path.join(self.single_image_dir_path, dataset_name + '.jpg')
+        crossed_image_train_path = os.path.join(self.crossed_image_train_dir_path, dataset_name + '.jpg')
+        single_image_train_path = os.path.join(self.single_image_train_dir_path, dataset_name + '.jpg')
+
         annotation_path = os.path.join(self.annotations_dir_path, dataset_name + '.xml')
+        annotation_train_path = os.path.join(self.annotations_train_dir_path, dataset_name + '.xml')
 
-        crossed_image = Image.open(crossed_image_path)
-        single_image = Image.open(single_image_path)
+        crossed_image = Image.open(crossed_image_train_path)
+        single_image = Image.open(single_image_train_path)
 
-        gt_boxes_position = self.parse_annotation_file(annotation_path)  # [x_min, y_min, x_max, y_max]
-
-        raw = [transforms.ToTensor()(crossed_image), transforms.ToTensor()(single_image), self.parse_annotation_file(annotation_path)]
-
-        crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position)
+        crossed_image = transforms.ToTensor()(crossed_image)
+        single_image = transforms.ToTensor()(single_image)
 
         if torch.cuda.is_available():
             crossed_image, single_image = crossed_image.to(self.device), single_image.to(self.device)
 
         if not self.train:
-            return crossed_image, single_image, raw[0], raw[1], raw[2]
+            return crossed_image, single_image, \
+                   transforms.ToTensor()(Image.open(crossed_image_path)), transforms.ToTensor()(Image.open(single_image_path)), \
+                   self.parse_annotation_file(annotation_path)
+        else:
+            gt_boxes_position = self.parse_annotation_file(annotation_train_path)  # [x_min, y_min, x_max, y_max]
 
-        s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
+            #raw = [transforms.ToTensor()(crossed_image), transforms.ToTensor()(single_image), self.parse_annotation_file(annotation_path)]
 
-        if torch.cuda.is_available():
-            s_tensor, m_tensor, l_tensor = s_tensor.to(self.device), m_tensor.to(self.device), l_tensor.to(self.device)
-            s_coords, m_coords, l_coords = s_coords.to(self.device), m_coords.to(self.device), l_coords.to(self.device)
+            # crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position, dataset_name)
+            s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
 
-        return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
+            if torch.cuda.is_available():
+                s_tensor, m_tensor, l_tensor = s_tensor.to(self.device), m_tensor.to(self.device), l_tensor.to(self.device)
+                s_coords, m_coords, l_coords = s_coords.to(self.device), m_coords.to(self.device), l_coords.to(self.device)
+
+            return crossed_image, single_image, s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords
 
     def __len__(self):
         return len(self.dataset_list)
@@ -71,16 +126,16 @@ class GravelDataset(data.Dataset):
         for obj in root.findall('object'):
             bbox_obj = obj.find('bndbox')
 
-            x_min = int(bbox_obj.find('xmin').text)
-            y_min = int(bbox_obj.find('ymin').text)
-            x_max = int(bbox_obj.find('xmax').text)
-            y_max = int(bbox_obj.find('ymax').text)
+            x_min = float(bbox_obj.find('xmin').text)
+            y_min = float(bbox_obj.find('ymin').text)
+            x_max = float(bbox_obj.find('xmax').text)
+            y_max = float(bbox_obj.find('ymax').text)
 
             bbox_info_list.append([x_min, y_min, x_max, y_max])
 
         return torch.tensor(bbox_info_list).float()
 
-    def transform_data(self, crossed_image, single_image, gt_boxes_position):
+    def transform_data(self, crossed_image, single_image, gt_boxes_position, is_transform=True, is_save=True, save_path=None):
         w, h = crossed_image.size
         scale = min(self.input_size / w, self.input_size / h)
         resize_w, resize_h = int(w * scale), int(h * scale)
@@ -89,7 +144,6 @@ class GravelDataset(data.Dataset):
         transform_image = transforms.Compose([
             transforms.Resize((resize_h, resize_w)),
             transforms.Pad((pad_x, pad_y, pad_x, pad_y), (125, 125, 125)),
-            transforms.ToTensor()
         ])
 
         crossed_image = transform_image(crossed_image)

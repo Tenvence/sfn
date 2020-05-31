@@ -3,10 +3,9 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from model.loss import Loss
-from model.lr_scheduler import LinearCosineScheduler
-from model.yolov3_net import Yolov3Net
-from utils.gravel_dataset import GravelDataset
+from Model.loss import Loss
+from Model.lr_scheduler import LinearCosineScheduler
+from Model.yolov3_net import Yolov3Net
 
 
 class Train:
@@ -34,6 +33,7 @@ class Train:
         step_idx = 0
         for epoch in range(epoch_num):
             process_bar = tqdm(self.data_loader)
+            loss_arr = []
             for d in process_bar:
                 crossed_image, single_image, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords = d
 
@@ -46,6 +46,8 @@ class Train:
 
                 step_idx += 1
 
-                process_bar.set_description("epoch: %d, loss: %.2f" % (epoch + 1, float(loss)))
+                loss_arr.append(float(loss))
+                mean_loss = sum(loss_arr) / len(loss_arr)
 
+                process_bar.set_description("epoch: %d, mean loss: %.2f, loss: %.2f" % (epoch + 1, mean_loss, float(loss)))
         torch.save(self.model.to(torch.device('cpu')).state_dict(), output_path)

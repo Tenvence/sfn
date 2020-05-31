@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
-from utils.iou import compute_giou, compute_iou
+from Utils.iou import compute_giou, compute_iou
 
 
 class Loss(nn.Module):

@@ -7,8 +7,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from model.yolov3_net import Yolov3Net
-from utils.iou import compute_iou
+from Model.yolov3_net import Yolov3Net
+from Utils.iou import compute_iou
 
 
 class Test:

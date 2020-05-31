@@ -2,13 +2,12 @@ import os
 import shutil
 import xml.etree.cElementTree as Et
 
-import cv2
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 from PIL import Image
 
-from utils.iou import compute_iou
+from Utils.iou import compute_iou
 
 
 class GravelDataset(data.Dataset):
@@ -99,14 +98,12 @@ class GravelDataset(data.Dataset):
 
         if not self.train:
             return crossed_image, single_image, \
-                   transforms.ToTensor()(Image.open(crossed_image_path)), transforms.ToTensor()(Image.open(single_image_path)), \
+                   transforms.ToTensor()(Image.open(crossed_image_path)), \
+                   transforms.ToTensor()(Image.open(single_image_path)), \
                    self.parse_annotation_file(annotation_path)
         else:
             gt_boxes_position = self.parse_annotation_file(annotation_train_path)  # [x_min, y_min, x_max, y_max]
 
-            #raw = [transforms.ToTensor()(crossed_image), transforms.ToTensor()(single_image), self.parse_annotation_file(annotation_path)]
-
-            # crossed_image, single_image, gt_boxes_position = self.transform_data(crossed_image, single_image, gt_boxes_position, dataset_name)
             s_tensor, m_tensor, l_tensor, s_coords, m_coords, l_coords = self.encode_gt_bboxes(gt_boxes_position, self.iou_thresh)
 
             if torch.cuda.is_available():
@@ -158,7 +155,7 @@ class GravelDataset(data.Dataset):
     def encode_gt_bboxes(self, gt_boxes_position, iou_thresh):
         max_boxes_per_scale = 150
 
-        # 3 scale output tensor from model
+        # 3 scale output tensor from Model
         s_tensor = torch.zeros((self.s_output_size, self.s_output_size, self.s_anchors.shape[0], 5))
         m_tensor = torch.zeros((self.m_output_size, self.m_output_size, self.m_anchors.shape[0], 5))
         l_tensor = torch.zeros((self.l_output_size, self.l_output_size, self.l_anchors.shape[0], 5))

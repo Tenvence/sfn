@@ -3,9 +3,9 @@ import torch.nn as nn
 import numpy as np
 
 
-class OutputDecoder(nn.Module):
+class OutDecoder(nn.Module):
     def __init__(self, anchors, scale):
-        super(OutputDecoder, self).__init__()
+        super(OutDecoder, self).__init__()
         self.anchors = anchors
         self.scale = scale
 

@@ -9,7 +9,7 @@ from Model.yolov3_net import Yolov3Net
 
 
 class Train:
-    def __init__(self, dataset, batch_size, device=torch.device('cpu')):
+    def __init__(self, dataset, batch_size, device=torch.device('cpu'), iou_thresh=0.5):
         self.anchors = dataset.s_anchors, dataset.m_anchors, dataset.l_anchors
         self.device = device
 
@@ -22,9 +22,9 @@ class Train:
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
         self.optimizer = Adam(self.model.parameters(), weight_decay=0.0005)
-        self.criterion = Loss(self.anchors, input_size=dataset.input_size)
+        self.criterion = Loss(self.anchors, input_size=dataset.input_size, iou_thresh=iou_thresh)
 
-    def run(self, epoch_num, warm_epoch_num, output_path):
+    def run(self, epoch_num, warm_epoch_num, output_model_path):
         steps_per_epoch = len(self.data_loader)
         warm_steps = warm_epoch_num * steps_per_epoch
         total_steps = epoch_num * steps_per_epoch
@@ -46,8 +46,13 @@ class Train:
 
                 step_idx += 1
 
+                if torch.isnan(loss):
+                    return False
+
                 loss_arr.append(float(loss))
                 mean_loss = sum(loss_arr) / len(loss_arr)
 
-                process_bar.set_description("epoch: %d, mean loss: %.2f, loss: %.2f" % (epoch + 1, mean_loss, float(loss)))
-        torch.save(self.model.to(torch.device('cpu')).state_dict(), output_path)
+                process_bar.set_description("  Epoch: %d, mean loss: %.2f, loss: %.2f" % (epoch + 1, mean_loss, float(loss)))
+        torch.save(self.model, output_model_path)
+
+        return True

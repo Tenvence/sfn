@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-
 from ..Modules.conv import Conv
 from ..Modules.res_block import ResBlock
 

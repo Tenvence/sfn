@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-
 from ..Modules.conv import Conv
 from ..Modules.conv_set import ConvSet
 

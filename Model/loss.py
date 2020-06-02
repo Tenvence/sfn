@@ -6,13 +6,14 @@ from Utils.iou import compute_giou, compute_iou
 
 
 class Loss(nn.Module):
-    def __init__(self, anchors, input_size):
+    def __init__(self, anchors, input_size, iou_thresh):
         super(Loss, self).__init__()
 
         self.s_anchors, self.m_anchors, self.l_anchors = anchors
 
         self.input_size = torch.tensor(input_size)
-        self.iou_thresh = torch.tensor(0.5)
+        # self.iou_thresh = torch.tensor(0.5)
+        self.iou_thresh = torch.tensor(iou_thresh)
 
     def forward(self, s_output, m_output, l_output, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords):
         s_giou_loss, s_conf_loss = self.compute_loss(s_output, s_gt_tensor, s_gt_coords)

@@ -2,6 +2,7 @@ import torch.nn as nn
 
 from Model.Backbone.dual_darknet53 import DualDarknet53
 from Model.Neck.fpn import FPN
+from Model.Neck.pan import PAN
 from Model.Modules.yolo_head import YoloHead
 
 
@@ -13,6 +14,7 @@ class Yolov3Net(nn.Module):
 
         self.backbone = DualDarknet53()
         self.neck = FPN()
+        # self.neck = PAN()
 
         self.head_s = YoloHead(in_channels=256, out_channels=out_channels, anchors=anchors[0], scale=8)
         self.head_m = YoloHead(in_channels=512, out_channels=out_channels, anchors=anchors[1], scale=16)

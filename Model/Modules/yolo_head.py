@@ -1,6 +1,5 @@
 import torch.nn as nn
-
-from Model.Modules.out_decoder import OutDecoder
+from .out_decoder import OutDecoder
 
 
 class YoloHead(nn.Module):

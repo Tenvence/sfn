@@ -1,52 +1,46 @@
 import os
 import shutil
 
-import numpy as np
 import cv2
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from Model.yolov3_net import Yolov3Net
 from Utils.iou import compute_iou
+from .eval import eval
 
 
 class Test:
-    def __init__(self, dataset, param_file, device=torch.device('cpu')):
+    def __init__(self, dataset, model_file, device=torch.device('cpu')):
         self.data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
         self.device = device
+
         self.input_size = dataset.input_size
 
         self.conf_thresh = 0.3
         self.iou_thresh = 0.45
 
-        anchors = [dataset.s_anchors, dataset.m_anchors, dataset.l_anchors]
-
-        self.model = Yolov3Net(anchors)
+        self.model = torch.load(model_file)
 
         if torch.cuda.is_available():
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
-        self.model.load_state_dict(torch.load(param_file))
         self.model.eval()
 
-    def run(self):
+    def run(self, output_dict):
         process_bar = tqdm(self.data_loader)
 
-        predicted_dir_path = './mAP/predicted'
-        ground_truth_dir_path = './mAP/ground-truth'
-        result_image_dir_path = './mAP/result-image'
+        predicted_dir_path = output_dict + '/predicted'
+        ground_truth_dir_path = output_dict + '/ground-truth'
 
         if os.path.exists(predicted_dir_path):
             shutil.rmtree(predicted_dir_path)
         if os.path.exists(ground_truth_dir_path):
             shutil.rmtree(ground_truth_dir_path)
-        if os.path.exists(result_image_dir_path):
-            shutil.rmtree(result_image_dir_path)
 
         os.mkdir(predicted_dir_path)
         os.mkdir(ground_truth_dir_path)
-        os.mkdir(result_image_dir_path)
 
         idx = 0
         for d in process_bar:
@@ -74,7 +68,16 @@ class Test:
                     x_min, y_min, x_max, y_max, conf = box
                     f.write('gravel %.4f %d %d %d %d\n' % (conf, x_min, y_min, x_max, y_max))
 
+            process_bar.set_description("  Eval idx %d. #gt = %d, #pred = %d" % (idx + 1, len(gt_boxes_position_raw[0]), len(pred_boxes)))
             idx += 1
+        iou_range = np.arange(0.5, 1.0, 0.05)
+        lines = []
+        for iou_thresh in iou_range:
+            ap, gt_num, tp, fp, p, r, f1 = eval(ground_truth_dir_path, predicted_dir_path, iou_thresh)
+            lines.append('%.2f %.2f %d %d %d %.2f %.2f %.2f\n' % (iou_thresh, ap * 100, gt_num, tp, fp, p * 100, r * 100, f1 * 100))
+        with open(output_dict + '/record.txt', 'w') as f:
+            f.writelines(lines)
+        print('Evaluation Finished!')
 
     def postprocess_boxes(self, pred_box, w, h):
         pred_coord = pred_box[:, 0:4]
@@ -144,10 +147,6 @@ class Test:
             conf = conf[iou_mask]
 
         return best_boxes
-
-    def draw_eval_file(self):
-
-        pass
 
     @staticmethod
     def draw_rectangle(image, pred_coord, color=(0, 255, 0), thickness=5):

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as f
+
 from Utils.iou import compute_giou, compute_iou
 
 
@@ -12,7 +12,6 @@ class Loss(nn.Module):
         self.s_anchors, self.m_anchors, self.l_anchors = anchors
 
         self.input_size = torch.tensor(input_size)
-        # self.iou_thresh = torch.tensor(0.5)
         self.iou_thresh = torch.tensor(iou_thresh)
 
     def forward(self, s_output, m_output, l_output, s_gt_tensor, m_gt_tensor, l_gt_tensor, s_gt_coords, m_gt_coords, l_gt_coords):
@@ -24,7 +23,9 @@ class Loss(nn.Module):
         m_loss = m_giou_loss + m_conf_loss
         l_loss = l_giou_loss + l_conf_loss
 
-        return s_loss + m_loss + l_loss
+        loss = s_loss + m_loss + l_loss
+
+        return loss
 
     def compute_loss(self, output, gt_tensor, gt_coords):
         output_coord = output[:, :, :, :, 0:4]
@@ -59,16 +60,11 @@ class Loss(nn.Module):
         background_conf = torch.sub(1, gt_tensor_conf) * torch.lt(max_iou, self.iou_thresh).float()
         conf_focal = torch.pow(gt_tensor_conf - output_conf, 2)
 
-        conf_loss = conf_focal * (
-                gt_tensor_conf * f.binary_cross_entropy_with_logits(input=gt_tensor_conf, target=self.logit(output_conf))
-                +
-                background_conf * f.binary_cross_entropy_with_logits(input=gt_tensor_conf, target=self.logit(output_conf))
-        )
+        conf_loss = conf_focal * (gt_tensor_conf + background_conf) * self.sigmoid_cross_entropy_with_logits(gt_tensor_conf, output_conf)
 
         return conf_loss
 
     @staticmethod
-    def logit(x):
-        x = torch.div(x, 1 - x)
-        x = torch.log(x)
-        return x
+    def sigmoid_cross_entropy_with_logits(labels, logits):
+        zeros = torch.zeros(logits.shape).to(device=logits.device)
+        return torch.max(logits, zeros) - labels * logits + torch.log(1 + torch.exp(-torch.abs(logits)))

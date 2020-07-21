@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from Utils.iou import compute_giou, compute_iou
+from Utils.iou import compute_giou, compute_iou, compute_diou, compute_ciou
 
 
 class Loss(nn.Module):
@@ -43,13 +44,14 @@ class Loss(nn.Module):
         return giou_loss, conf_loss
 
     def compute_giou_loss(self, output_coord, gt_tensor_coord, gt_tensor_conf):
-        giou = compute_giou(output_coord, gt_tensor_coord)[..., np.newaxis]
+        # giou = compute_giou(output_coord, gt_tensor_coord)[..., np.newaxis]
+        giou = compute_diou(output_coord, gt_tensor_coord)[..., np.newaxis]
         box_scale = torch.div(gt_tensor_coord[:, :, :, :, 2:3] * gt_tensor_coord[:, :, :, :, 3:4], torch.pow(self.input_size, 2))
-        giou_loss = gt_tensor_conf * torch.sub(2, box_scale) * torch.sub(1, giou)
+        giou_loss = gt_tensor_conf * (2. - box_scale) * torch.sub(1, giou)
 
         return giou_loss
 
-    def compute_conf_loss(self, output_coord, output_conf, gt_tensor_conf, gt_coords):
+    def compute_conf_loss(self, output_coord, output_conf, gt_tensor_conf, gt_coords, alpha=0.25, gamma=2):
         iou = compute_iou(output_coord[:, :, :, :, np.newaxis, :], gt_coords[:, np.newaxis, np.newaxis, np.newaxis, :, :])
         max_iou = torch.max(iou, dim=-1)[0][..., np.newaxis]
 
@@ -58,13 +60,8 @@ class Loss(nn.Module):
             self.iou_thresh = self.iou_thresh.to(device=max_iou.device)
 
         background_conf = torch.sub(1, gt_tensor_conf) * torch.lt(max_iou, self.iou_thresh).float()
-        conf_focal = torch.pow(gt_tensor_conf - output_conf, 2)
+        conf_focal = torch.abs(gt_tensor_conf - (1 - alpha)) * torch.pow(torch.abs(gt_tensor_conf - output_conf), gamma)
 
-        conf_loss = conf_focal * (gt_tensor_conf + background_conf) * self.sigmoid_cross_entropy_with_logits(gt_tensor_conf, output_conf)
+        conf_loss = conf_focal * (gt_tensor_conf + background_conf) * F.binary_cross_entropy(output_conf, gt_tensor_conf, reduce=False)
 
         return conf_loss
-
-    @staticmethod
-    def sigmoid_cross_entropy_with_logits(labels, logits):
-        zeros = torch.zeros(logits.shape).to(device=logits.device)
-        return torch.max(logits, zeros) - labels * logits + torch.log(1 + torch.exp(-torch.abs(logits)))

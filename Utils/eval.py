@@ -133,8 +133,21 @@ def eval(gt_dict, pred_dict, iou_thresh):
     tp = count_true
     fp = pred_counter - count_true
 
+    ap *= 100
+
+    if tp + fp == 0:
+        return ap, gt_num, tp, fp, 0, 0, 0
+
     p = tp / (tp + fp)
     r = tp / gt_num
+
+    if p + r == 0:
+        return ap, gt_num, tp, fp, p, r, 0
+
     f1 = 2 * p * r / (p + r)
+
+    p *= 100
+    r *= 100
+    f1 *= 100
 
     return ap, gt_num, tp, fp, p, r, f1

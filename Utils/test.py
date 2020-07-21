@@ -1,7 +1,6 @@
 import os
 import shutil
 
-import cv2
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -13,7 +12,7 @@ from .eval import eval
 
 class Test:
     def __init__(self, dataset, model_file, device=torch.device('cpu')):
-        self.data_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+        self.data_loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=8)
         self.device = device
 
         self.input_size = dataset.input_size
@@ -44,23 +43,29 @@ class Test:
 
         idx = 0
         for d in process_bar:
-            crossed_image, single_image, crossed_image_raw, single_image_raw, gt_boxes_position_raw = d
+            crossed_image, single_image, raw_h, raw_w, raw_bboxes = d
+
+            crossed_image = crossed_image.to(device=self.device)
+            single_image = single_image.to(device=self.device)
+
+            raw_bboxes = torch.squeeze(raw_bboxes)
+            raw_h = torch.squeeze(raw_h).float().numpy()
+            raw_w = torch.squeeze(raw_w).float().numpy()
 
             with open(os.path.join(ground_truth_dir_path, str(idx) + '.txt'), 'w') as f:
-                for gt_box in gt_boxes_position_raw[0]:
+                for gt_box in raw_bboxes:
                     x_min, y_min, x_max, y_max = gt_box.numpy()
                     f.write('gravel %d %d %d %d\n' % (x_min, y_min, x_max, y_max))
 
-            h, w = crossed_image_raw.shape[2], crossed_image_raw.shape[3]
-
             s_output, m_output, l_output = self.model(crossed_image, single_image)
 
-            s_output = s_output.reshape((-1, 5))
-            m_output = m_output.reshape((-1, 5))
-            l_output = l_output.reshape((-1, 5))
+            # remove grad
+            s_output = s_output.detach().reshape((-1, 5))
+            m_output = m_output.detach().reshape((-1, 5))
+            l_output = l_output.detach().reshape((-1, 5))
             pred_box = torch.cat([s_output, m_output, l_output], dim=0)
 
-            pred_coord, pred_conf = self.postprocess_boxes(pred_box, torch.tensor(w), torch.tensor(h))
+            pred_coord, pred_conf = self.postprocess_boxes(pred_box, raw_w, raw_h)
             pred_boxes = self.nms(pred_coord, pred_conf)
 
             with open(os.path.join(predicted_dir_path, str(idx) + '.txt'), 'w') as f:
@@ -68,16 +73,27 @@ class Test:
                     x_min, y_min, x_max, y_max, conf = box
                     f.write('gravel %.4f %d %d %d %d\n' % (conf, x_min, y_min, x_max, y_max))
 
-            process_bar.set_description("  Eval idx %d. #gt = %d, #pred = %d" % (idx + 1, len(gt_boxes_position_raw[0]), len(pred_boxes)))
+            process_bar.set_description("    Eval. #gt = %d, #pred = %d" % (len(raw_bboxes), len(pred_boxes)))
             idx += 1
+
         iou_range = np.arange(0.5, 1.0, 0.05)
         lines = []
+        aps = []
+        f1s = []
         for iou_thresh in iou_range:
             ap, gt_num, tp, fp, p, r, f1 = eval(ground_truth_dir_path, predicted_dir_path, iou_thresh)
-            lines.append('%.2f %.2f %d %d %d %.2f %.2f %.2f\n' % (iou_thresh, ap * 100, gt_num, tp, fp, p * 100, r * 100, f1 * 100))
+            lines.append('%.2f %.2f %d %d %d %.2f %.2f %.2f\n' % (iou_thresh, ap, gt_num, tp, fp, p, r, f1))
+            aps.append(ap)
+            f1s.append(f1)
+
         with open(output_dict + '/record.txt', 'w') as f:
             f.writelines(lines)
-        print('Evaluation Finished!')
+
+        print('    Evaluation Finished! AP50=%.2f; AP70=%.2f; AP90=%.2f; mAP=%.2f; mF1=%.2f\n' % (
+            aps[0], aps[4], aps[8], sum(aps) / len(aps), sum(f1s) / len(f1s)))
+
+        with open(output_dict + '/verify_record.txt', 'a+') as f:
+            f.writelines('%.2f %.2f %.2f %.2f %.2f\n' % (aps[0], aps[4], aps[8], sum(aps) / len(aps), sum(f1s) / len(f1s)))
 
     def postprocess_boxes(self, pred_box, w, h):
         pred_coord = pred_box[:, 0:4]
@@ -87,17 +103,10 @@ class Test:
         pred_coord = torch.cat([pred_coord[:, :2] - pred_coord[:, 2:] * 0.5, pred_coord[:, :2] + pred_coord[:, 2:] * 0.5], dim=-1)
 
         # [x_min, y_min, x_max, y_max] -> [x_min_org, y_min_org, x_max_org, y_max_org]
-        w = w.float()
-        h = h.float()
         input_size = float(self.input_size)
         resize_ratio = min(input_size / w, input_size / h)
         dw = (input_size - resize_ratio * w) / 2
         dh = (input_size - resize_ratio * h) / 2
-
-        if torch.cuda.is_available() and pred_coord.is_cuda:
-            dw = dw.to(device=pred_coord.device)
-            dh = dh.to(device=pred_coord.device)
-            resize_ratio = torch.tensor([resize_ratio]).to(device=pred_coord.device)
 
         pred_coord[:, 0::2] = (pred_coord[:, 0::2] - dw) / resize_ratio
         pred_coord[:, 1::2] = (pred_coord[:, 1::2] - dh) / resize_ratio
@@ -147,10 +156,3 @@ class Test:
             conf = conf[iou_mask]
 
         return best_boxes
-
-    @staticmethod
-    def draw_rectangle(image, pred_coord, color=(0, 255, 0), thickness=5):
-        for box in pred_coord:
-            cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), color, thickness)
-
-        return image

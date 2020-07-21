@@ -27,11 +27,12 @@ def compute_giou(boxes1, boxes2):
     return giou
 
 
-def compute_diou(boxes1, boxes2, with_iou=False):
-    bbox_diag = torch.pow(boxes1[..., 0] - boxes2[..., 0], 2) + torch.pow(boxes1[..., 1] - boxes2[..., 1], 2)
+def compute_diou(boxes1, boxes2, with_iou=False, is_regularize=True):
+    if is_regularize:
+        boxes1 = regularize_boxes(boxes1)
+        boxes2 = regularize_boxes(boxes2)
 
-    boxes1 = regularize_boxes(boxes1)
-    boxes2 = regularize_boxes(boxes2)
+    bbox_diag = torch.pow(boxes1[..., 0] - boxes2[..., 0], 2) + torch.pow(boxes1[..., 1] - boxes2[..., 1], 2)
 
     inter_area, union_area, _, enclose_diag = compute_inter_union_area(boxes1, boxes2)
     iou = inter_area / (union_area + eps)
@@ -44,15 +45,19 @@ def compute_diou(boxes1, boxes2, with_iou=False):
 
 
 def compute_ciou(boxes1, boxes2):
-    v = (4 / math.pi) * torch.pow(torch.atan(boxes1[..., 2] / boxes1[..., 3]) - torch.atan(boxes2[..., 2] / boxes2[..., 3]), 2)
-    diou, iou = compute_diou(boxes1, boxes2, with_iou=True)
+    boxes1 = regularize_boxes(boxes1)
+    boxes2 = regularize_boxes(boxes2)
+
+    v = (4 / math.pi) * torch.pow(torch.atan(boxes1[..., 2] / (boxes1[..., 3] + eps)) - torch.atan(boxes2[..., 2] / (boxes2[..., 3] + eps)), 2)
+    diou, iou = compute_diou(boxes1, boxes2, with_iou=True, is_regularize=False)
     alpha = v / (1 - iou + v + eps)
-    ciou = diou + alpha * v
+    ciou = diou - alpha * v
 
     return ciou
 
 
 def regularize_boxes(boxes):
+    # [x_min, y_min, x_max, y_max] -> [x, y, w, h]
     boxes = torch.cat([boxes[..., :2] - boxes[..., 2:] * 0.5, boxes[..., :2] + boxes[..., 2:] * 0.5], dim=-1)
     boxes = torch.cat([torch.min(boxes[..., :2], boxes[..., 2:]), torch.max(boxes[..., :2], boxes[..., 2:])], dim=-1)
 

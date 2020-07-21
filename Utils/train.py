@@ -1,11 +1,11 @@
 import os
+
 import torch
-from torch.optim import Adam, SGD
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from Model.loss import Loss
-from Utils.test import Test
 from Model.lr_scheduler import LinearCosineScheduler
 from Model.net import Net
 
@@ -15,7 +15,7 @@ class Train:
         self.anchors = dataset.s_anchors, dataset.m_anchors, dataset.l_anchors
         self.device = device
 
-        self.data_loader = DataLoader(dataset, batch_size, shuffle=True, num_workers=16)
+        self.data_loader = DataLoader(dataset, batch_size, shuffle=True, drop_last=True, num_workers=16)
 
         self.is_verify = verify_dataset is not None
         self.verify_dataset = verify_dataset
@@ -27,7 +27,6 @@ class Train:
             self.model = torch.nn.DataParallel(self.model).to(device=self.device)
 
         self.optimizer = Adam(self.model.parameters(), weight_decay=0.0005)
-        # self.optimizer = SGD(self.model.parameters(), lr=0.02, momentum=0.9, weight_decay=0.0001)
         self.criterion = Loss(self.anchors, input_size=dataset.input_size, iou_thresh=iou_thresh)
 
         self.iou_thresh = iou_thresh

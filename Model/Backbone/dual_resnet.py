@@ -62,9 +62,8 @@ class DualResNet(nn.Module):
         x1 = self.layer_2_x1(x1)
         x2 = self.layer_2_x2(x2)
 
-        # x = torch.cat([x1, x2], dim=1)
-        # x = self.conv_concat(x)
-        x = torch.mul(x1, x2)
+        x = torch.cat([x1, x2], dim=1)
+        x = self.conv_concat(x)
 
         route_s = x
         x = self.layer_3(x)

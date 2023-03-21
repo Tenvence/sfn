@@ -1,4 +1,4 @@
-# Gravel Object Detection  
+# SiamFuseNet for Detritus Detection  
 
 Official Code of Computers & Geosciences paper "SiamFuseNet: A Pseudo-Siamese Network for Detritus Detection from Polarized Microscopic Images of River Sands".
 

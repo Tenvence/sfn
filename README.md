@@ -4,7 +4,7 @@
 
 <p align="center">
 Cong Wang<sup>1</sup>, Shiping Ge<sup>1</sup>, Zhiwei Jiang<sup>1</sup>, Huizhen Hao<sup>1,2</sup>, Qing Gu<sup>1,*</sup>
-<br><br>
+<br>
 <sup>1</sup> State Key Laboratory for Novel Software Technology, Nanjing University
 <br>
 <sup>2</sup> School of Information and Communication Engineering, Nanjing Institute of Technology

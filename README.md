@@ -12,7 +12,7 @@ Cong Wang<sup>1</sup>, Shiping Ge<sup>1</sup>, Zhiwei Jiang<sup>1</sup>, Huizhen
 <sup>*</sup> Corresponding author
 <br><br>
 Computers & Geosciences<br>
-<a href="https://doi.org/10.1016/j.cageo.2021.104912" target="_blank">Paper</a> 
+[<a href="https://doi.org/10.1016/j.cageo.2021.104912" target="_blank">paper</a>]
 <br>
 </div>
 
